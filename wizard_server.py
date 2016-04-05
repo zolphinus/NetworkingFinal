@@ -16,8 +16,8 @@ s.listen(5)
 def clientThread(conn):
      while True:
          try:
-             conn.send(bytes('Hi! I am server\n', 'UTF-8'))
-             data = (conn.recv(1024)).decode("utf-8")
+             data = (conn.recv(1024)).decode("UTF-8")
+             conn.send(bytes(data, 'UTF-8'))
              print(data)
          except SocketError as e:
              if e.errno == errno.ECONNRESET:

@@ -12,6 +12,43 @@ roomList = []
 TEXT_MAXINPUTSIZE = 16
 
 error_message = ""
+server_command = ""
+
+def getServerCommand():
+    global s
+    global currentStatus
+    global nextStatus
+    global error_message
+    
+    try:
+        if currentStatus == ClientStatus.inRoom:
+            #data = (s.recv(1024)).decode("UTF-8")
+
+            ##########DUMMY DATA FOR TESTING
+            data = "ATTACKING"
+
+            if data == "ATTACKING":
+                nextStatus = ClientStatus.attacking
+            elif data == "DEFENDING":
+                nextStatus = ClientStatus.defending
+            elif data == "SPECTATING":
+                nextStatus = ClientStatus.spectating
+
+        if currentStatus == ClientStatus.waiting:
+            print("waiting")
+
+        if currentStatus == ClientStatus.checkGameState:
+            print("checking game state")
+            
+            
+    except timeout:
+        error_message = "A timeout has occurred"
+        nextStatus = ClientStatus.offline
+        s.close()
+    except error:
+        error_message = "An error has occurred"
+        nextStatus = ClientStatus.offline
+        s.close()
 
 class ClientStatus(Enum):
     offline = 1
@@ -19,10 +56,12 @@ class ClientStatus(Enum):
     inRoom = 3
     attacking = 4
     defending = 5
-    playingActions = 6
-    checkGameState = 7
-    endGame = 8
-    noUpdate = 9
+    spectating = 6
+    waiting = 7
+    playingActions = 8
+    checkGameState = 9
+    endGame = 10
+    noUpdate = 11
 
 currentStatus = ClientStatus.offline
 nextStatus = ClientStatus.noUpdate
@@ -93,19 +132,27 @@ def connectToRoom(command, roomname, err):
         data = (s.recv(1024)).decode("UTF-8")
         print(data)
 
-        data = "TEST"
+        #MOCK DATA FOR TESTING PURPOSES PLEASE DELETE WHEN DONE
+        ###########
+        data = "JOIN_SUCCESS"
 
-        #can join
+        #successful create and/or join
+        if data == "JOIN_SUCCESS":
+            nextStatus = ClientStatus.inRoom
 
         #can't join
+        if data == "BAD_JOIN":
+            err.set("Cannot join because room is full")
+        
 
-        #can create
-
-        #cannot create (this should not be reached, just error checking)
+        #cannot create
+        if data == "ROOM_EXISTS":
+            err.set("Cannot create room because it already exists")
 
         #can spectate (to be added later)
 
-        if data == "TEST":
+        #error case
+        if data == "ERROR":
             nextStatus = ClientStatus.offline
             error_message = "An unknown connection error has occurred\nor the server has kicked you"
             s.close()
@@ -154,26 +201,49 @@ def connectToServer(userName, err):
     except error:
         err.set("An error has occurred")
         s.close()
+
+def leaveRoom():
+    global s
+    global error_message
+    global nextStatus
+
+    try:
+        s.send(bytes("LEAVE", "UTF-8"))
+
+        data = (s.recv(1024)).decode("UTF-8")
+        print(data)
+
+        if data == "LEAVE":
+            nextStatus = ClientStatus.inLobby
+        
+    except timeout:
+        error_message = "A timeout has occurred"
+        nextStatus = ClientStatus.offline
+        s.close()
+    except error:
+        error_message = "An error has occurred"
+        nextStatus = ClientStatus.offline
+        s.close()
         
 #GUI for Offline Status
 def makeOfflineWindow(base, top, socket):
-    top = Frame(base, background="GREEN")
+    top = Frame(base)
     top.pack(fill=BOTH, expand=1)
 
     global error_message
     err = StringVar()
     err.set(error_message)
 
-    connectButton = Button(top, text="Connect", fg="red", width=12,
+    connectButton = Button(top, text="Connect", width=12,
                            command= lambda: connectToServer(userNameEntry.get(),
                            err))
     
     connectButton.place(relx=0.5, rely=0.75, anchor=CENTER)
 
-    wwLabel = Label(top, text="Wizard War", fg="red")
+    wwLabel = Label(top, text="Wizard War")
     wwLabel.place(relx=0.5, rely=0.25, anchor=CENTER)
 
-    userNameLabel = Label(top, text="USER NAME : ", fg="red")
+    userNameLabel = Label(top, text="USER NAME : ")
     userNameLabel.place(relx=0.40, rely=0.60, anchor=CENTER)
     
     errorLabel = Label(top, textvariable= err, fg="red")
@@ -244,7 +314,6 @@ def makeInLobbyWindow(base, top, s):
     roomNameLabel.place(relx=0.3, rely=0.70, anchor=W)
 
     #Room Name Entry Box
-
     roomNameEntry = Entry(top)
     roomNameEntry.place(relx=0.48, rely=0.70, anchor=W)
     roomNameEntry.bind("<Key>", validateTextInputSize)
@@ -255,25 +324,75 @@ def makeInLobbyWindow(base, top, s):
     createButton.place(relx=0.3, rely=0.80, anchor=W)
 
     #Join Button
-
     joinButton = Button(top, text="Join Room", width=32,
                            command= lambda: connectToRoom("JOIN", roomNameEntry.get(), err))
     joinButton.place(relx=0.3, rely=.90, anchor=W)
 
+    #Error Label
+    errorLabel = Label(top, textvariable= err, justify = LEFT, fg="red")
+    errorLabel.place(relx=0.3, rely=0.60, anchor=W)
+
+def makeInRoomWindow(base, top, s):
+    top = Frame(base)
+    top.pack(fill=BOTH, expand=1)
+
+    global error_message
+    error_message = ""
+    err = StringVar()
+    err.set(error_message)
+
+    #Error Label
+    errorLabel = Label(top, textvariable= err, justify = LEFT, fg="red")
+    errorLabel.place(relx=0.3, rely=0.60, anchor=W)
+
+    #message Label
+    messageLabel = Label(top, text="WAITING FOR OTHER PLAYERS TO JOIN", justify = LEFT)
+    messageLabel.place(relx=0.3, rely=0.25, anchor=W)
+
+    #Leave Button
+    leaveButton = Button(top, text="Leave Room", width=24,
+                           command= lambda: leaveRoom())
+    leaveButton.place(relx=0.33, rely=.75, anchor=W)
+
+def makeWaitingWindow(base, top, s):
+    top = Frame(base)
+    top.pack(fill=BOTH, expand=1)
+
+    global error_message
+    error_message = ""
+    err = StringVar()
+    err.set(error_message)
+
+    #Error Label
+    errorLabel = Label(top, textvariable= err, justify = LEFT, fg="red")
+    errorLabel.place(relx=0.3, rely=0.60, anchor=W)
+
+    #message Label
+    messageLabel = Label(top, text="WAITING FOR OTHER PLAYER...", justify = LEFT)
+    messageLabel.place(relx=0.3, rely=0.25, anchor=W)
+
+
+    
 def updateGUI(base, top, sock):
     global nextStatus
+    global currentStatus
     if nextStatus != ClientStatus.noUpdate:
-        global nextStatus
         print(nextStatus)
-        time.sleep(3)
+        time.sleep(1)
         for child in base.winfo_children():
             child.destroy()
-
+        print(nextStatus)
         if nextStatus == ClientStatus.offline:
             makeOfflineWindow(base, top, sock)
         if nextStatus == ClientStatus.inLobby:
             makeInLobbyWindow(base, top, sock)
+        if nextStatus == ClientStatus.inRoom:
+            makeInRoomWindow(base, top, sock)
 
+        if nextStatus == ClientStatus.waiting:
+            makeWaitingWindow(base, top, sock)
+            
+        currentStatus = nextStatus
         nextStatus = ClientStatus.noUpdate
             
 
@@ -292,10 +411,12 @@ makeOfflineWindow(base, topFrame, s)
 
 
 while True:
+    global currentStatus
     
     base.update_idletasks()
     base.update()
     updateGUI(base, topFrame, s)
+    getServerCommand()
 
 
 '''
@@ -306,5 +427,5 @@ port = 12348                # service port
 s.connect((host, port))
 '''
 
-if s == None:
+if s != None:
     s.close() 

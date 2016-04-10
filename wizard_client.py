@@ -3,17 +3,103 @@ from tkinter import *
 from enum import Enum
 from room import Room
 import time
+from datetime import datetime, date
 
+#round timer value for selecting actions during attack/defend sequences
+ROUND_TIME = 30
+
+#variables used to calculate timer values
+time1 = None
+time2 = None
+time_delt = None
+
+#connection details
 host = '127.0.0.1' #socket.gethostname() # local machine name
 port = 12348                # service port
-    
+
+#lobby rooms
 roomList = []
 
+#max username size
 TEXT_MAXINPUTSIZE = 16
 
+#flags
+has_attacks = False
+has_defends = False
+
+#message strings
 error_message = ""
 server_command = ""
+build_sequence = ""
+attack_sequence = ""
+defend_sequence = ""
 
+#variable used for display offset
+offset = 0
+numActionsSelected = 0
+
+#maximum number of actions during defend/attack
+#5 should be the maximum used without modifying the display
+MAX_ACTIONS = 5
+
+def addElementalDisplay(top, element, color):
+    global offset
+    global numActionsSelected
+    global MAX_ACTIONS
+    global build_sequence
+    global has_attacks
+    global has_defends
+
+    if numActionsSelected < MAX_ACTIONS:    
+        #Action Label
+        offset = offset + .15
+        actionLabel = Label(top, text= element, justify = LEFT, fg=color)
+        actionLabel.place(relx=offset, rely=0.35, anchor=CENTER)
+
+        if build_sequence == "NONE":
+            build_sequence = element
+        else:
+            build_sequence = build_sequence + ";" + element
+
+        if currentStatus == ClientStatus.attacking:
+            attack_sequence = build_sequence
+        elif currentStatus == ClientStatus.defending:
+            defend_sequence = build_sequence
+        
+        numActionsSelected = numActionsSelected + 1
+        if numActionsSelected == MAX_ACTIONS:
+            if currentStatus == ClientStatus.attacking:
+                has_attacks = True
+            elif currentStatus == ClientStatus.defending:
+                has_defends = True
+    
+def updateTimer():
+    global time2
+    global time_delt
+    global timerVar
+    global ROUND_TIME
+    global has_attacks
+    global has_defends
+    
+    if currentStatus == ClientStatus.attacking or currentStatus == ClientStatus.defending:
+        time2 = datetime.time(datetime.now())
+        time_delt = (datetime.combine(date.today(), time2) - datetime.combine(date.today(), time1)).total_seconds()
+
+        #formats the timer displays to remain on 0 while transitioning states
+        if ROUND_TIME - time_delt <= 0:
+            time_delt = ROUND_TIME
+
+        #sets a label text variable to update timers on forms
+        timerVar.set( str(int(round(ROUND_TIME-time_delt))))
+
+        #timer has ran out, or actions have been confirmed
+        if time_delt == ROUND_TIME or has_attacks == True or has_defends == True:
+            if currentStatus == ClientStatus.attacking:
+                print("send attack data")
+            elif currentStatus == ClientStatus.defending:
+                print("send defend data")
+            
+        
 def getServerCommand():
     global s
     global currentStatus
@@ -171,7 +257,7 @@ def connectToServer(userName, err):
     #attempts to connect to the server
     #if succesful, checks that the username is free
     global s
-    s = socket()
+    s = socket(AF_INET, SOCK_STREAM)
     s.settimeout(5)
     try:
         #send userName to server
@@ -371,11 +457,59 @@ def makeWaitingWindow(base, top, s):
     messageLabel = Label(top, text="WAITING FOR OTHER PLAYER...", justify = LEFT)
     messageLabel.place(relx=0.3, rely=0.25, anchor=W)
 
+def makeAttackingWindow(base, top, s):
+    top = Frame(base)
+    top.pack(fill=BOTH, expand=1)
+
+    global error_message
+    global timerVar
+    global offset
+    global build_sequence
+    build_sequence == "NONE"
+    
+    timerVar.set("30")
+    error_message = ""
+    err = StringVar()
+    err.set(error_message)
+
+    offset = 0.10
+
+    #Error Label
+    errorLabel = Label(top, textvariable= err, justify = LEFT, fg="red")
+    errorLabel.place(relx=0.50, rely=0.63, anchor=CENTER)
+    
+    #Attack Directions Label
+    attackLabel = Label(top, text= "ATTACKING - Please select up to 5 attacks", justify = LEFT)
+    attackLabel.place(relx=0.50, rely=0.10, anchor=CENTER)
+
+    #Timer Label
+    timerLabel = Label(top, textvariable= timerVar, justify = LEFT, fg="red")
+    timerLabel.place(relx=0.50, rely=0.20, anchor=CENTER)
+
+    #Sequence Label
+    sequenceLabel = Label(top, text= "Action Sequence: ", justify = LEFT)
+    sequenceLabel.place(relx=offset, rely=0.35, anchor=CENTER)
+
+    #Fire Button
+    fireButton = Button(top, text="Fire", width=16,
+                           command= lambda: addElementalDisplay(top, "Fire", "red"))
+    fireButton.place(relx=0.15, rely=.75, anchor=CENTER)
+
+    #Water Button
+    waterButton = Button(top, text="Water", width=16,
+                           command= lambda: addElementalDisplay(top, "Water", "blue"))
+    waterButton.place(relx=0.50, rely=.75, anchor=CENTER)
+
+    #Electric Button
+    electricButton = Button(top, text="Electric", width=16,
+                           command= lambda: addElementalDisplay(top, "Electric", "orange"))
+    electricButton.place(relx=0.85, rely=.75, anchor=CENTER)
 
     
 def updateGUI(base, top, sock):
     global nextStatus
     global currentStatus
+    global time1
     if nextStatus != ClientStatus.noUpdate:
         print(nextStatus)
         time.sleep(1)
@@ -388,6 +522,9 @@ def updateGUI(base, top, sock):
             makeInLobbyWindow(base, top, sock)
         if nextStatus == ClientStatus.inRoom:
             makeInRoomWindow(base, top, sock)
+        if nextStatus == ClientStatus.attacking:
+            makeAttackingWindow(base, top, sock)
+            time1 = datetime.time(datetime.now())
 
         if nextStatus == ClientStatus.waiting:
             makeWaitingWindow(base, top, sock)
@@ -399,6 +536,9 @@ def updateGUI(base, top, sock):
 
 base = Tk()
 topFrame = None
+
+timerVar = StringVar()
+timerVar.set("")
 
 #setup client window
 base.resizable(width=False, height=False)
@@ -417,6 +557,7 @@ while True:
     base.update()
     updateGUI(base, topFrame, s)
     getServerCommand()
+    updateTimer()
 
 
 '''

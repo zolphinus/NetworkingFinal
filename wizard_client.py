@@ -8,6 +8,14 @@ from datetime import datetime, date
 #round timer value for selecting actions during attack/defend sequences
 ROUND_TIME = 30
 
+#wizard stats
+MAX_HEALTH = 6
+wiz1_points = 0
+wiz2_points = 0
+current_player = ""
+current_attacker = ""
+
+
 #variables used to calculate timer values
 time1 = None
 time2 = None
@@ -80,6 +88,9 @@ def updateTimer():
     global ROUND_TIME
     global has_attacks
     global has_defends
+    global s
+    global build_sequence
+    global nextStatus
     
     if currentStatus == ClientStatus.attacking or currentStatus == ClientStatus.defending:
         time2 = datetime.time(datetime.now())
@@ -94,10 +105,50 @@ def updateTimer():
 
         #timer has ran out, or actions have been confirmed
         if time_delt == ROUND_TIME or has_attacks == True or has_defends == True:
-            if currentStatus == ClientStatus.attacking:
-                print("send attack data")
-            elif currentStatus == ClientStatus.defending:
-                print("send defend data")
+            try:
+                if currentStatus == ClientStatus.attacking:
+                    s.send(bytes("SEND_ATTACK", "UTF-8"))
+                    data = (s.recv(1024)).decode("UTF-8")
+
+                    #dummy test, remove when building server
+                    if data == "SEND_ATTACK":
+                        data = "OKAY"
+
+                    if data == "OKAY":
+                        s.send(bytes(build_sequence, "UTF-8"))
+                        data = (s.recv(1024)).decode("UTF-8")
+
+                        #dummy test, remove when building server
+                        if data == build_sequence:
+                            data = "OKAY"
+
+                        if data == "OKAY":
+                            nextStatus = ClientStatus.waiting
+                        
+                elif currentStatus == ClientStatus.defending:
+                    s.send(bytes("SEND_DEFEND", "UTF-8"))
+                    data = (s.recv(1024)).decode("UTF-8")
+
+                    #dummy test, remove when building server
+                    if data == "SEND_DEFEND":
+                        data = "OKAY"
+
+                    if data == "OKAY":
+                        s.send(bytes(build_sequence, "UTF-8"))
+                        data = (s.recv(1024)).decode("UTF-8")
+
+                        #dummy test, remove when building server
+                        if data == build_sequence:
+                            data = "OKAY"
+
+                        if data == "OKAY":
+                            nextStatus = ClientStatus.waiting
+            except timeout:
+                err.set("A timeout has occurred")
+                s.close()
+            except error:
+                err.set("An error has occurred")
+                s.close()
             
         
 def getServerCommand():
@@ -105,23 +156,66 @@ def getServerCommand():
     global currentStatus
     global nextStatus
     global error_message
+    global current_player
+    global current_attacker
     
     try:
         if currentStatus == ClientStatus.inRoom:
             #data = (s.recv(1024)).decode("UTF-8")
 
             ##########DUMMY DATA FOR TESTING
-            data = "ATTACKING"
+            data = "DEFENDING"
 
             if data == "ATTACKING":
                 nextStatus = ClientStatus.attacking
+                current_player = "First Player"
+                current_attacker = current_player
             elif data == "DEFENDING":
                 nextStatus = ClientStatus.defending
+                current_player = "Second Player"
             elif data == "SPECTATING":
                 nextStatus = ClientStatus.spectating
+                current_player = "Spectator"
 
         if currentStatus == ClientStatus.waiting:
-            print("waiting")
+            global has_attacks
+            global has_defends
+            global attack_sequence
+            global defend_sequence
+
+            if has_attacks != True:
+                s.send(bytes("GET_ATTACKS", "UTF-8"))
+                data = (s.recv(1024)).decode("UTF-8")
+
+                if data == "GET_ATTACKS":
+                    data = "NONE"
+
+                #server tells client to wait if the data requested isn't available
+                if data != "WAIT":
+                    attack_sequence = data
+                    has_attacks = True
+                    print(attack_sequence)
+                else:
+                    print("waiting for attack data")
+                
+
+            if has_defends != True:
+                s.send(bytes("GET_DEFENDS", "UTF-8"))
+                data = (s.recv(1024)).decode("UTF-8")
+
+                if data == "GET_DEFENDS":
+                    data = "NONE"
+
+                #server tells client to wait if the data requested isn't available
+                if data != "WAIT":
+                    defend_sequence = data
+                    has_defends = True
+                    print(defend_sequence)
+                else:
+                    print("waiting for defend data")
+
+            if has_attacks == True and has_defends == True:
+                nextStatus = ClientStatus.playingActions
 
         if currentStatus == ClientStatus.checkGameState:
             print("checking game state")
@@ -224,6 +318,15 @@ def connectToRoom(command, roomname, err):
 
         #successful create and/or join
         if data == "JOIN_SUCCESS":
+                    
+            global wiz1_points
+            global wiz2_points
+            global MAX_POINTS
+
+            #resets points when room is created
+            wiz1_points = 0
+            wiz2_points = 0
+
             nextStatus = ClientStatus.inRoom
 
         #can't join
@@ -465,7 +568,9 @@ def makeAttackingWindow(base, top, s):
     global timerVar
     global offset
     global build_sequence
-    build_sequence == "NONE"
+    build_sequence = "NONE"
+    attack_sequence = ""
+    defend_sequence = ""
     
     timerVar.set("30")
     error_message = ""
@@ -505,6 +610,57 @@ def makeAttackingWindow(base, top, s):
                            command= lambda: addElementalDisplay(top, "Electric", "orange"))
     electricButton.place(relx=0.85, rely=.75, anchor=CENTER)
 
+
+
+def makeDefendingWindow(base, top, s):
+    top = Frame(base)
+    top.pack(fill=BOTH, expand=1)
+
+    global error_message
+    global timerVar
+    global offset
+    global build_sequence
+    build_sequence = "NONE"
+    attack_sequence = ""
+    defend_sequence = ""
+    
+    timerVar.set("30")
+    error_message = ""
+    err = StringVar()
+    err.set(error_message)
+
+    offset = 0.10
+
+    #Error Label
+    errorLabel = Label(top, textvariable= err, justify = LEFT, fg="red")
+    errorLabel.place(relx=0.50, rely=0.63, anchor=CENTER)
+    
+    #Defending Directions Label
+    attackLabel = Label(top, text= "DEFENDING - Please select up to 5 defenses", justify = LEFT)
+    attackLabel.place(relx=0.50, rely=0.10, anchor=CENTER)
+
+    #Timer Label
+    timerLabel = Label(top, textvariable= timerVar, justify = LEFT, fg="red")
+    timerLabel.place(relx=0.50, rely=0.20, anchor=CENTER)
+
+    #Sequence Label
+    sequenceLabel = Label(top, text= "Action Sequence: ", justify = LEFT)
+    sequenceLabel.place(relx=offset, rely=0.35, anchor=CENTER)
+
+    #Fire Button
+    fireButton = Button(top, text="Fire", width=16,
+                           command= lambda: addElementalDisplay(top, "Fire", "red"))
+    fireButton.place(relx=0.15, rely=.75, anchor=CENTER)
+
+    #Water Button
+    waterButton = Button(top, text="Water", width=16,
+                           command= lambda: addElementalDisplay(top, "Water", "blue"))
+    waterButton.place(relx=0.50, rely=.75, anchor=CENTER)
+
+    #Electric Button
+    electricButton = Button(top, text="Electric", width=16,
+                           command= lambda: addElementalDisplay(top, "Electric", "orange"))
+    electricButton.place(relx=0.85, rely=.75, anchor=CENTER)
     
 def updateGUI(base, top, sock):
     global nextStatus
@@ -525,7 +681,9 @@ def updateGUI(base, top, sock):
         if nextStatus == ClientStatus.attacking:
             makeAttackingWindow(base, top, sock)
             time1 = datetime.time(datetime.now())
-
+        if nextStatus == ClientStatus.defending:
+            makeDefendingWindow(base, top, sock)
+            time1 = datetime.time(datetime.now())
         if nextStatus == ClientStatus.waiting:
             makeWaitingWindow(base, top, sock)
             

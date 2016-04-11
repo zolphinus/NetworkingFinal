@@ -9,12 +9,15 @@ from datetime import datetime, date
 ROUND_TIME = 30
 
 #wizard stats
-MAX_HEALTH = 6
+MAX_POINTS = 6
 wiz1_points = 0
 wiz2_points = 0
 current_player = ""
 current_attacker = ""
 
+#action lists
+attack_list = None
+defend_list = None
 
 #variables used to calculate timer values
 time1 = None
@@ -50,6 +53,14 @@ numActionsSelected = 0
 #5 should be the maximum used without modifying the display
 MAX_ACTIONS = 5
 
+def playAction(p1Action, p2Action):
+    global wiz1ElementalVar
+    global wiz2ElementalVar
+
+    wiz1ElementalVar.set(p1Action)
+    wiz2ElementalVar.set(p2Action)
+    
+
 def addElementalDisplay(top, element, color):
     global offset
     global numActionsSelected
@@ -57,6 +68,8 @@ def addElementalDisplay(top, element, color):
     global build_sequence
     global has_attacks
     global has_defends
+    global attack_list
+    global defend_list
 
     if numActionsSelected < MAX_ACTIONS:    
         #Action Label
@@ -71,8 +84,11 @@ def addElementalDisplay(top, element, color):
 
         if currentStatus == ClientStatus.attacking:
             attack_sequence = build_sequence
+            attack_list = attack_sequence.split(";")
         elif currentStatus == ClientStatus.defending:
             defend_sequence = build_sequence
+            defend_list = defend_sequence.split(";")
+            
         
         numActionsSelected = numActionsSelected + 1
         if numActionsSelected == MAX_ACTIONS:
@@ -182,19 +198,26 @@ def getServerCommand():
             global has_defends
             global attack_sequence
             global defend_sequence
+            global defend_list
+            global attack_list
+
+            global build_sequence
 
             if has_attacks != True:
                 s.send(bytes("GET_ATTACKS", "UTF-8"))
                 data = (s.recv(1024)).decode("UTF-8")
 
+                #dummy data for testing
                 if data == "GET_ATTACKS":
-                    data = "NONE"
+                    data = "Fire;Water;Electric"
 
                 #server tells client to wait if the data requested isn't available
                 if data != "WAIT":
                     attack_sequence = data
+                    attack_list = attack_sequence.split(";")
                     has_attacks = True
                     print(attack_sequence)
+                    print(attack_list)
                 else:
                     print("waiting for attack data")
                 
@@ -204,17 +227,26 @@ def getServerCommand():
                 data = (s.recv(1024)).decode("UTF-8")
 
                 if data == "GET_DEFENDS":
-                    data = "NONE"
+                    data = build_sequence
 
                 #server tells client to wait if the data requested isn't available
                 if data != "WAIT":
                     defend_sequence = data
+                    defend_list = defend_sequence.split(";")
                     has_defends = True
-                    print(defend_sequence)
+                    print(defend_list)
                 else:
                     print("waiting for defend data")
 
             if has_attacks == True and has_defends == True:
+                #pads defends with NONE to match attacks
+                while len(attack_list) > len(defend_list):
+                    defend_list.append("NONE")
+                while len(defend_list) > len(attack_list):
+                    defend_list.pop()
+                
+                print(attack_list)
+                print(defend_list)
                 nextStatus = ClientStatus.playingActions
 
         if currentStatus == ClientStatus.checkGameState:
@@ -323,9 +355,10 @@ def connectToRoom(command, roomname, err):
             global wiz2_points
             global MAX_POINTS
 
-            #resets points when room is created
+            #resets data when room is created
             wiz1_points = 0
             wiz2_points = 0
+            
 
             nextStatus = ClientStatus.inRoom
 
@@ -661,6 +694,72 @@ def makeDefendingWindow(base, top, s):
     electricButton = Button(top, text="Electric", width=16,
                            command= lambda: addElementalDisplay(top, "Electric", "orange"))
     electricButton.place(relx=0.85, rely=.75, anchor=CENTER)
+
+def makePlayActionWindow(base, top, sock):
+    top = Frame(base)
+    top.pack(fill=BOTH, expand=1)
+
+    global error_message
+    global wiz1PointVar
+    global wiz1ElementVar
+    global wiz2PointVar
+    global wiz2ElementVar
+    global attackDirectionVar
+    global pointsAwardedVar
+    global wiz1ElementColor
+    global wiz2ElementColor
+    global wiz1_points
+    global wiz2_points
+    
+    error_message = "TEST ERROR"
+    err = StringVar()
+    err.set(error_message)
+
+    wiz1PointVar.set(str(wiz1_points))
+    wiz2PointVar.set(str(wiz2_points))
+    pointsAwardedVar.set("0")
+
+    
+    #Error Label
+    errorLabel = Label(top, textvariable= err, justify = LEFT, fg="red")
+    errorLabel.place(relx=0.50, rely=0.70, anchor=CENTER)
+
+    #Attack Direction Label
+    attackDirectionLabel = Label(top, textvariable= attackDirectionVar, justify = LEFT)
+    attackDirectionLabel.place(relx=0.50, rely=0.55, anchor=CENTER)
+
+    #Player 1 Title Label
+    p1PointsLabel = Label(top, text= "Player 1", justify = LEFT)
+    p1PointsLabel.place(relx=0.20, rely=0.10, anchor=CENTER)
+    
+    #Player 1 Points Label
+    p1PointsLabel = Label(top, textvariable= wiz1PointVar, justify = LEFT)
+    p1PointsLabel.place(relx=0.20, rely=0.18, anchor=CENTER)
+
+    #Player 1 Elemental Label
+    p1PointsLabel = Label(top, textvariable= wiz1ElementVar, justify = LEFT, fg= wiz1ElementColor.get())
+    p1PointsLabel.place(relx=0.20, rely=0.55, anchor=CENTER)
+
+
+    #Player 2 Title Label
+    p2PointsLabel = Label(top, text= "Player 2", justify = LEFT)
+    p2PointsLabel.place(relx=0.80, rely=0.10, anchor=CENTER)
+    
+    #Player 2 Points Label
+    p2PointsLabel = Label(top, textvariable= wiz2PointVar, justify = LEFT)
+    p2PointsLabel.place(relx=0.80, rely=0.18, anchor=CENTER)
+
+    #Player 2 Elemental Label
+    p2ElementalLabel = Label(top, textvariable= wiz2ElementVar, justify = LEFT, fg= wiz2ElementColor.get())
+    p2ElementalLabel.place(relx=0.80, rely=0.55, anchor=CENTER)
+    
+    #Points Awarded Label
+    pointsAwardedLabel = Label(top, textvariable= pointsAwardedVar, justify = RIGHT)
+    pointsAwardedLabel.place(relx=0.38, rely=0.85, anchor=E)
+
+    #Award Message Label
+    awardMessageLabel = Label(top, text= " points awarded for action.", justify = LEFT)
+    awardMessageLabel.place(relx=0.50, rely=0.85, anchor=CENTER)
     
 def updateGUI(base, top, sock):
     global nextStatus
@@ -686,6 +785,8 @@ def updateGUI(base, top, sock):
             time1 = datetime.time(datetime.now())
         if nextStatus == ClientStatus.waiting:
             makeWaitingWindow(base, top, sock)
+        if nextStatus == ClientStatus.playingActions:
+            makePlayActionWindow(base, top, sock)
             
         currentStatus = nextStatus
         nextStatus = ClientStatus.noUpdate
@@ -695,8 +796,35 @@ def updateGUI(base, top, sock):
 base = Tk()
 topFrame = None
 
+#global string variables need to be declared here
 timerVar = StringVar()
 timerVar.set("")
+
+wiz1PointVar = StringVar()
+wiz1PointVar.set("")
+
+wiz1ElementVar = StringVar()
+wiz1ElementVar.set("")
+
+wiz1ElementColor = StringVar()
+wiz1ElementColor.set("black")
+
+wiz2PointVar = StringVar()
+wiz2PointVar.set("")
+
+wiz2ElementVar = StringVar()
+wiz2ElementVar.set("")
+
+wiz2ElementColor = StringVar()
+wiz2ElementColor.set("black")
+
+attackDirectionVar = StringVar()
+attackDirectionVar.set(">>>>>>>>>>>>>>>>>>>>")
+
+pointsAwardedVar = StringVar()
+pointsAwardedVar.set("")
+
+
 
 #setup client window
 base.resizable(width=False, height=False)

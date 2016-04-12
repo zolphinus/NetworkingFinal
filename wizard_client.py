@@ -14,10 +14,12 @@ wiz1_points = 0
 wiz2_points = 0
 current_player = ""
 current_attacker = ""
+winning_player = ""
 
 #action lists
 attack_list = None
 defend_list = None
+game_results = None
 
 #variables used to calculate timer values
 time1 = None
@@ -61,6 +63,8 @@ def getElementValue(element):
     elif element == "Electric":
         return 2
 
+    return -1
+
 def playAction(p1Action, p2Action):
     global wiz1PointVar
     global wiz1ElementVar
@@ -99,12 +103,16 @@ def playAction(p1Action, p2Action):
         attack = getElementValue(p1Action)
         defend = getElementValue(p2Action)
         attackDirectionVar.set(">>>>>>>>>>>>>>>>>>>>")
-    else:
+    elif current_attacker == "Player 2":
         attack = getElementValue(p2Action)
         defend = getElementValue(p1Action)
         attackDirectionVar.set("<<<<<<<<<<<<<<<<<<<<")
 
-    points_earned = (1 + attack - defend) % 3
+    if defend != -1:
+        points_earned = (1 + attack - defend) % 3
+    else:
+        points_earned = 2
+        
     pointsAwardedVar.set(str(points_earned))
 
     if current_attacker == "Player 1":
@@ -163,6 +171,7 @@ def updateTimer():
     global s
     global build_sequence
     global nextStatus
+    global currentStatus
     
     if currentStatus == ClientStatus.attacking or currentStatus == ClientStatus.defending:
         time2 = datetime.time(datetime.now())
@@ -221,7 +230,14 @@ def updateTimer():
             except error:
                 err.set("An error has occurred")
                 s.close()
-            
+
+    if currentStatus == ClientStatus.endGame:
+        time2 = datetime.time(datetime.now())
+        time_delt = (datetime.combine(date.today(), time2) - datetime.combine(date.today(), time1)).total_seconds()
+
+        if time_delt >= 6:
+            nextStatus = ClientStatus.inLobby
+
         
 def getServerCommand():
     global s
@@ -233,6 +249,19 @@ def getServerCommand():
     global time1
     global time2
     global time_delt
+    global wiz1_points
+    global wiz2_points
+    global MAX_POINTS
+    global game_results
+    global has_attacks
+    global has_defends
+    global attack_sequence
+    global defend_sequence
+    global defend_list
+    global attack_list
+    global build_sequence
+    global winning_player
+    
     
     try:
         if currentStatus == ClientStatus.inRoom:
@@ -243,25 +272,17 @@ def getServerCommand():
 
             if data == "ATTACKING":
                 nextStatus = ClientStatus.attacking
-                current_player = "First Player"
+                current_player = "Player 1"
                 current_attacker = current_player
             elif data == "DEFENDING":
                 nextStatus = ClientStatus.defending
-                current_player = "Second Player"
+                current_player = "Player 2"
+                current_attacker = "Player 1"
             elif data == "SPECTATING":
                 nextStatus = ClientStatus.spectating
                 current_player = "Spectator"
 
         if currentStatus == ClientStatus.waiting:
-            global has_attacks
-            global has_defends
-            global attack_sequence
-            global defend_sequence
-            global defend_list
-            global attack_list
-
-            global build_sequence
-
             if has_attacks != True:
                 s.send(bytes("GET_ATTACKS", "UTF-8"))
                 data = (s.recv(1024)).decode("UTF-8")
@@ -329,9 +350,73 @@ def getServerCommand():
                     attack_list.pop(0)
                     defend_list.pop(0)
                 else:
-                    print("it's zero")
-            
-            
+                    #someone has scored enough points to end the game
+                    if wiz1_points >= MAX_POINTS or wiz2_points >= MAX_POINTS:
+                        #player wins
+                        print("------------------------------")
+                        print(current_player)
+                        print(current_attacker)
+
+                        
+                        game_results = None
+                        data = None
+                        if current_player != "Spectator":
+                            if current_player == current_attacker:
+                                game_results = "WIN"
+                                winning_player = current_player
+                            else:
+                                #opponent wins
+                                game_results = "LOSE"
+                                if current_player == "Player 1":
+                                    winning_player = "Player 2"
+                                elif current_player == "Player 2":
+                                    winning_player = "Player 1"
+                            
+
+                            #report data to server
+                            s.send(bytes(game_results, "UTF-8"))
+                            nextStatus = ClientStatus.endGame 
+                        else:
+                            #request
+                            s.send(bytes("GET_RESULTS", "UTF-8"))
+                            
+                            #server confirms
+                            winning_player = (s.recv(1024)).decode("UTF-8")
+
+                            if winning_player == "Player 1" or winning_player == "Player 2":
+                                nextStatus = ClientStatus.endGame
+                            
+                    else:
+                        print("New round")
+                        #tell server to play a new round
+                        s.send(bytes("NEW_ROUND", "UTF-8"))
+                        data = (s.recv(1024)).decode("UTF-8")
+
+                        #server will reply with new role
+
+                        data = "ATTACKING"
+                        
+                        if data == "ATTACKING":
+                            nextStatus = ClientStatus.attacking
+                            if current_attacker == "Player 1":
+                                current_attacker = "Player 2"
+                            else:
+                                current_attacker = "Player 1"
+                        elif data == "DEFENDING":
+                            nextStatus = ClientStatus.defending
+                            if current_attacker == "Player 1":
+                                current_attacker = "Player 2"
+                            else:
+                                current_attacker = "Player 1"
+                        elif data == "SPECTATING":
+                            nextStatus = ClientStatus.spectating
+
+                        #reset the build/attack/defend sequences to "NONE"
+                        attack_sequence = "None"
+                        defend_sequence = "None"
+                        build_sequence = "None"
+                        has_attacks = False
+                        has_defends = False
     except timeout:
         error_message = "A timeout has occurred"
         nextStatus = ClientStatus.offline
@@ -681,6 +766,8 @@ def makeAttackingWindow(base, top, s):
     global timerVar
     global offset
     global build_sequence
+    global numActionsSelected
+    numActionsSelected = 0
     build_sequence = "NONE"
     attack_sequence = ""
     defend_sequence = ""
@@ -733,6 +820,8 @@ def makeDefendingWindow(base, top, s):
     global timerVar
     global offset
     global build_sequence
+    global numActionsSelected
+    numActionsSelected = 0
     build_sequence = "NONE"
     attack_sequence = ""
     defend_sequence = ""
@@ -795,7 +884,7 @@ def makePlayActionWindow(base, top, sock):
     #prepare timer for move playing
     time1 = datetime.time(datetime.now())
     
-    error_message = "TEST ERROR"
+    error_message = ""
     err = StringVar()
     err.set(error_message)
 
@@ -844,6 +933,31 @@ def makePlayActionWindow(base, top, sock):
     #Award Message Label
     awardMessageLabel = Label(top, text= " points awarded for action.", justify = LEFT)
     awardMessageLabel.place(relx=0.50, rely=0.85, anchor=CENTER)
+
+def makeGameOverWindow(base, top, sock):
+    top = Frame(base)
+    top.pack(fill=BOTH, expand=1)
+
+    global time1
+    global error_message
+    global winning_player
+
+    #prepare timer for display update
+    time1 = datetime.time(datetime.now())
+    
+    error_message = ""
+    err = StringVar()
+    err.set(error_message)
+    
+    #Error Label
+    errorLabel = Label(top, textvariable= err, justify = LEFT, fg="red")
+    errorLabel.place(relx=0.50, rely=0.70, anchor=CENTER)
+
+    results_text = winning_player + " has won the game!"
+    
+    #Results Label
+    resultsLabel = Label(top, text= results_text, justify = LEFT, fg="red")
+    resultsLabel.place(relx=0.50, rely=0.30, anchor=CENTER)
     
 def updateGUI(base, top, sock):
     global nextStatus
@@ -871,6 +985,8 @@ def updateGUI(base, top, sock):
             makeWaitingWindow(base, top, sock)
         if nextStatus == ClientStatus.playingActions:
             makePlayActionWindow(base, top, sock)
+        if nextStatus == ClientStatus.endGame:
+            makeGameOverWindow(base, top, sock)
             
         currentStatus = nextStatus
         nextStatus = ClientStatus.noUpdate
@@ -921,8 +1037,6 @@ makeOfflineWindow(base, topFrame, s)
 
 
 while True:
-    global currentStatus
-    
     base.update_idletasks()
     base.update()
     updateGUI(base, topFrame, s)

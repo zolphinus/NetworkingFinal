@@ -53,14 +53,69 @@ numActionsSelected = 0
 #5 should be the maximum used without modifying the display
 MAX_ACTIONS = 5
 
+def getElementValue(element):
+    if element == "Fire":
+        return 0
+    elif element == "Water":
+        return 1
+    elif element == "Electric":
+        return 2
+
 def playAction(p1Action, p2Action):
-    global wiz1ElementalVar
-    global wiz2ElementalVar
-
-    wiz1ElementalVar.set(p1Action)
-    wiz2ElementalVar.set(p2Action)
+    global wiz1PointVar
+    global wiz1ElementVar
+    global wiz1ElementColor
+    global wiz2PointVar
+    global wiz2ElementVar
+    global wiz2ElementColor
+    global attackDirectionVar
+    global pointsAwardedVar
+    global wiz1_points
+    global wiz2_points
     
+    wiz1ElementVar.set(p1Action)
+    wiz2ElementVar.set(p2Action)
 
+    if p1Action == "Fire":
+        wiz1ElementColor.set("red")
+    elif p1Action == "Water":
+        wiz1ElementColor.set("blue")
+    elif p1Action == "Electric":
+        wiz1ElementColor.set("orange")
+        
+
+    if p2Action == "Fire":
+        wiz2ElementColor.set("red")
+    elif p2Action == "Water":
+        wiz2ElementColor.set("blue")
+    elif p2Action == "Electric":
+        wiz2ElementColor.set("orange")
+
+    #simplifies damage calculations
+    attack = None
+    defend = None
+
+    if current_attacker == "Player 1":
+        attack = getElementValue(p1Action)
+        defend = getElementValue(p2Action)
+        attackDirectionVar.set(">>>>>>>>>>>>>>>>>>>>")
+    else:
+        attack = getElementValue(p2Action)
+        defend = getElementValue(p1Action)
+        attackDirectionVar.set("<<<<<<<<<<<<<<<<<<<<")
+
+    points_earned = (1 + attack - defend) % 3
+    pointsAwardedVar.set(str(points_earned))
+
+    if current_attacker == "Player 1":
+        wiz1_points = wiz1_points + points_earned
+        wiz1PointVar.set(str(wiz1_points))
+        print(wiz1_points)
+    else:
+        wiz2_points = wiz2_points + points_earned
+        wiz2PointVar.set(str(wiz2_points))
+        print(wiz2_points)
+        
 def addElementalDisplay(top, element, color):
     global offset
     global numActionsSelected
@@ -98,6 +153,7 @@ def addElementalDisplay(top, element, color):
                 has_defends = True
     
 def updateTimer():
+    global time1
     global time2
     global time_delt
     global timerVar
@@ -174,6 +230,9 @@ def getServerCommand():
     global error_message
     global current_player
     global current_attacker
+    global time1
+    global time2
+    global time_delt
     
     try:
         if currentStatus == ClientStatus.inRoom:
@@ -249,8 +308,28 @@ def getServerCommand():
                 print(defend_list)
                 nextStatus = ClientStatus.playingActions
 
-        if currentStatus == ClientStatus.checkGameState:
-            print("checking game state")
+        if currentStatus == ClientStatus.playingActions:
+            time2 = datetime.time(datetime.now())
+            time_delt = (datetime.combine(date.today(), time2) - datetime.combine(date.today(), time1)).total_seconds()
+
+            if time_delt >= 2:
+                time1 = datetime.time(datetime.now())
+                time2 = None
+                #place 2 second timer here
+                if len(attack_list) > 0:
+                    #play actions here
+                    print("-------------------------------")
+                    print(attack_list)
+                    print(defend_list)
+                    if current_attacker == "Player 1":
+                        playAction(attack_list[0], defend_list[0])
+                    else:
+                        playAction(defend_list[0], attack_list[0])
+
+                    attack_list.pop(0)
+                    defend_list.pop(0)
+                else:
+                    print("it's zero")
             
             
     except timeout:
@@ -274,6 +353,7 @@ class ClientStatus(Enum):
     checkGameState = 9
     endGame = 10
     noUpdate = 11
+
 
 currentStatus = ClientStatus.offline
 nextStatus = ClientStatus.noUpdate
@@ -699,6 +779,7 @@ def makePlayActionWindow(base, top, sock):
     top = Frame(base)
     top.pack(fill=BOTH, expand=1)
 
+    global time1
     global error_message
     global wiz1PointVar
     global wiz1ElementVar
@@ -710,6 +791,9 @@ def makePlayActionWindow(base, top, sock):
     global wiz2ElementColor
     global wiz1_points
     global wiz2_points
+
+    #prepare timer for move playing
+    time1 = datetime.time(datetime.now())
     
     error_message = "TEST ERROR"
     err = StringVar()

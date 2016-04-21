@@ -191,18 +191,11 @@ def updateTimer():
                     s.send(bytes("SEND_ATTACK", "UTF-8"))
                     data = (s.recv(1024)).decode("UTF-8")
 
-                    #dummy test, remove when building server
-                    if data == "SEND_ATTACK":
-                        data = "OKAY"
-
                     if data == "OKAY":
+                        print(build_sequence)
                         s.send(bytes(build_sequence, "UTF-8"))
                         data = (s.recv(1024)).decode("UTF-8")
-
-                        #dummy test, remove when building server
-                        if data == build_sequence:
-                            data = "OKAY"
-
+                        
                         if data == "OKAY":
                             nextStatus = ClientStatus.waiting
                         
@@ -210,17 +203,9 @@ def updateTimer():
                     s.send(bytes("SEND_DEFEND", "UTF-8"))
                     data = (s.recv(1024)).decode("UTF-8")
 
-                    #dummy test, remove when building server
-                    if data == "SEND_DEFEND":
-                        data = "OKAY"
-
                     if data == "OKAY":
                         s.send(bytes(build_sequence, "UTF-8"))
                         data = (s.recv(1024)).decode("UTF-8")
-
-                        #dummy test, remove when building server
-                        if data == build_sequence:
-                            data = "OKAY"
 
                         if data == "OKAY":
                             nextStatus = ClientStatus.waiting
@@ -265,10 +250,10 @@ def getServerCommand():
     
     try:
         if currentStatus == ClientStatus.inRoom:
-            #data = (s.recv(1024)).decode("UTF-8")
-
-            ##########DUMMY DATA FOR TESTING
-            data = "DEFENDING"
+            
+            s.send(bytes("GET_ROLE", "UTF-8"))
+            data = (s.recv(1024)).decode("UTF-8")
+            print(data)
 
             if data == "ATTACKING":
                 nextStatus = ClientStatus.attacking
@@ -284,12 +269,9 @@ def getServerCommand():
 
         if currentStatus == ClientStatus.waiting:
             if has_attacks != True:
+                
                 s.send(bytes("GET_ATTACKS", "UTF-8"))
                 data = (s.recv(1024)).decode("UTF-8")
-
-                #dummy data for testing
-                if data == "GET_ATTACKS":
-                    data = "Fire;Water;Electric"
 
                 #server tells client to wait if the data requested isn't available
                 if data != "WAIT":
@@ -305,9 +287,6 @@ def getServerCommand():
             if has_defends != True:
                 s.send(bytes("GET_DEFENDS", "UTF-8"))
                 data = (s.recv(1024)).decode("UTF-8")
-
-                if data == "GET_DEFENDS":
-                    data = build_sequence
 
                 #server tells client to wait if the data requested isn't available
                 if data != "WAIT":
@@ -353,10 +332,6 @@ def getServerCommand():
                     #someone has scored enough points to end the game
                     if wiz1_points >= MAX_POINTS or wiz2_points >= MAX_POINTS:
                         #player wins
-                        print("------------------------------")
-                        print(current_player)
-                        print(current_attacker)
-
                         
                         game_results = None
                         data = None
@@ -387,36 +362,43 @@ def getServerCommand():
                                 nextStatus = ClientStatus.endGame
                             
                     else:
-                        print("New round")
                         #tell server to play a new round
                         s.send(bytes("NEW_ROUND", "UTF-8"))
                         data = (s.recv(1024)).decode("UTF-8")
+                        print(data)
+                        if data == "OKAY":
+                            data = "TEMP"
+                            if current_player == "Spectator":
+                                data = "SPECTATING"
+                            elif current_attacker == current_player:
+                                data = "DEFENDING"
+                            elif current_attacker != current_player:
+                                data = "ATTACKING"
 
-                        #server will reply with new role
+                            s.send(bytes(data, "UTF-8"))
+                            data = (s.recv(1024)).decode("UTF-8")
+                            
+                            if data == "ATTACKING":
+                                nextStatus = ClientStatus.attacking
+                                if current_attacker == "Player 1":
+                                    current_attacker = "Player 2"
+                                else:
+                                    current_attacker = "Player 1"
+                            elif data == "DEFENDING":
+                                nextStatus = ClientStatus.defending
+                                if current_attacker == "Player 1":
+                                    current_attacker = "Player 2"
+                                else:
+                                    current_attacker = "Player 1"
+                            elif data == "SPECTATING":
+                                nextStatus = ClientStatus.spectating
 
-                        data = "ATTACKING"
-                        
-                        if data == "ATTACKING":
-                            nextStatus = ClientStatus.attacking
-                            if current_attacker == "Player 1":
-                                current_attacker = "Player 2"
-                            else:
-                                current_attacker = "Player 1"
-                        elif data == "DEFENDING":
-                            nextStatus = ClientStatus.defending
-                            if current_attacker == "Player 1":
-                                current_attacker = "Player 2"
-                            else:
-                                current_attacker = "Player 1"
-                        elif data == "SPECTATING":
-                            nextStatus = ClientStatus.spectating
-
-                        #reset the build/attack/defend sequences to "NONE"
-                        attack_sequence = "None"
-                        defend_sequence = "None"
-                        build_sequence = "None"
-                        has_attacks = False
-                        has_defends = False
+                            #reset the build/attack/defend sequences to "NONE"
+                            attack_sequence = "None"
+                            defend_sequence = "None"
+                            build_sequence = "None"
+                            has_attacks = False
+                            has_defends = False
     except timeout:
         error_message = "A timeout has occurred"
         nextStatus = ClientStatus.offline
@@ -500,7 +482,7 @@ def loadPrior(first, second, third, index, NB, PB):
             PB['state'] = DISABLED
     loadRooms(first, second, third, index[0])
 
-def connectToRoom(command, roomname, err):
+def connectToRoom(command, room_name, err):
     global nextStatus
     global s
     global error_message
@@ -508,35 +490,35 @@ def connectToRoom(command, roomname, err):
         s.send(bytes(command, "UTF-8"))
         data = (s.recv(1024)).decode("UTF-8")
         print(data)
-
-        #MOCK DATA FOR TESTING PURPOSES PLEASE DELETE WHEN DONE
-        ###########
-        data = "JOIN_SUCCESS"
-
-        #successful create and/or join
-        if data == "JOIN_SUCCESS":
-                    
-            global wiz1_points
-            global wiz2_points
-            global MAX_POINTS
-
-            #resets data when room is created
-            wiz1_points = 0
-            wiz2_points = 0
+        if data == "OKAY":
+            s.send(bytes(room_name, "UTF-8"))
+            data = (s.recv(1024)).decode("UTF-8")
             
 
-            nextStatus = ClientStatus.inRoom
+            #successful create and/or join
+            if data == "JOIN_SUCCESS":
+                        
+                global wiz1_points
+                global wiz2_points
+                global MAX_POINTS
 
-        #can't join
-        if data == "BAD_JOIN":
-            err.set("Cannot join because room is full")
-        
+                #resets data when room is created
+                wiz1_points = 0
+                wiz2_points = 0
+                
 
-        #cannot create
-        if data == "ROOM_EXISTS":
-            err.set("Cannot create room because it already exists")
+                nextStatus = ClientStatus.inRoom
 
-        #can spectate (to be added later)
+            #can't join
+            if data == "BAD_JOIN":
+                err.set("Cannot join because room does not exist!")
+            
+
+            #cannot create
+            if data == "ROOM_EXISTS":
+                err.set("Cannot create room because it already exists")
+
+            #can spectate (to be added later)
 
         #error case
         if data == "ERROR":
@@ -564,24 +546,28 @@ def connectToServer(userName, err):
         #send userName to server
         
         s.connect((host, port))
-        s.send(bytes(userName, "UTF-8"))
-
-        print(userName)
+        s.send(bytes("SEND_USERNAME", "UTF-8"))
         data = (s.recv(1024)).decode("UTF-8")
-        print(data)
+
+        if data == "OKAY":
+            s.send(bytes(userName, "UTF-8"))
+
+            print(userName)
+            data = (s.recv(1024)).decode("UTF-8")
+            print(data)
+                
+            if data == "TRUE":
+                global nextStatus
+                nextStatus = ClientStatus.inLobby
+                err.set("")
+                #socket stays open in this case
+            elif data == "FALSE":
+                err.set("That user name is already in use!")
+                s.close()
+            else:
+                err.set("Unknown data was returned from the connection!")
+                s.close()
             
-        if data == "true":
-            global nextStatus
-            nextStatus = ClientStatus.inLobby
-            err.set("")
-            #socket stays open in this case
-        elif data == "false":
-            err.set("That user name is already in use!")
-            s.close()
-        else:
-            err.set("Unknown data was returned from the connection!")
-            s.close()
-        
     except timeout:
         err.set("A timeout has occurred")
         s.close()
@@ -1019,7 +1005,7 @@ wiz2ElementColor = StringVar()
 wiz2ElementColor.set("black")
 
 attackDirectionVar = StringVar()
-attackDirectionVar.set(">>>>>>>>>>>>>>>>>>>>")
+attackDirectionVar.set("====================")
 
 pointsAwardedVar = StringVar()
 pointsAwardedVar.set("")

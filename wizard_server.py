@@ -28,8 +28,8 @@ class Room():
 class Player():
      def __init__(self, user_name, conn, time):
           self.user_name = user_name
-          self.conn = conn
           self.time = time
+          self.conn = conn
 
 def leaveRoom(room_name, current_player):
      global room_list
@@ -123,6 +123,8 @@ def clientThread(conn):
      current_player = None
      
      current_room = Room()
+     winning_player = "WAIT"
+     
      in_room = False
      
      while True:
@@ -145,6 +147,7 @@ def clientThread(conn):
                   #####need to handle room data transfer here
                   
              if data == "CREATE":
+                  print(data)
                   data = "OKAY"
                   conn.send(bytes(data, 'UTF-8'))
                   room_name = (conn.recv(1024)).decode("UTF-8")
@@ -159,6 +162,7 @@ def clientThread(conn):
                        room_list.append(current_room)
                        data = "JOIN_SUCCESS"
                        in_room = True
+                  print(data)
                   conn.send(bytes(data, 'UTF-8'))
 
              if data == "JOIN":
@@ -176,6 +180,12 @@ def clientThread(conn):
 
              while in_room == True:
                   data = (conn.recv(1024)).decode("UTF-8")
+
+                  if data == "CREATE":
+                       print("we should be away from this loop")
+                       conn.send(bytes("ERROR", 'UTF-8'))
+                       
+                  
                   if data == "LEAVE":
                        with lock:
                             leaveRoom(room_name, current_player)
@@ -218,8 +228,19 @@ def clientThread(conn):
                        current_room.hasDefends = False
                        
                        
-                       
-                  
+                  if data == "GET_RESULTS":
+                       data = winning_player
+                       conn.send(bytes(data, 'UTF-8'))
+
+                  if data == "WIN":
+                       winning_player = current_player.user_name
+                       current_room = Room()
+                       current_room.hasAttacks = False
+                       current_room.hasDefends = False
+                       in_room = False
+
+                  if data == "LOSE":
+                       in_room = False
 
                   if data == "SEND_DEFEND":
                        data = "OKAY"
@@ -228,7 +249,6 @@ def clientThread(conn):
                        data = "OKAY"
                        conn.send(bytes(data, 'UTF-8'))
                        current_room.hasDefends = True
-                       
          except SocketError as e:
              if e.errno == errno.ECONNRESET:
                  pass

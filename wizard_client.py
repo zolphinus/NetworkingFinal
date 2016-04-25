@@ -253,7 +253,6 @@ def getServerCommand():
             
             s.send(bytes("GET_ROLE", "UTF-8"))
             data = (s.recv(1024)).decode("UTF-8")
-            print(data)
 
             if data == "ATTACKING":
                 nextStatus = ClientStatus.attacking
@@ -335,6 +334,13 @@ def getServerCommand():
                         
                         game_results = None
                         data = None
+                        attack_sequence = ""
+                        defend_sequence = ""
+                        build_sequence = "None"
+                        has_attacks = False
+                        has_defends = False
+                        numActionsSelected = 0
+                        
                         if current_player != "Spectator":
                             if current_player == current_attacker:
                                 game_results = "WIN"
@@ -347,8 +353,6 @@ def getServerCommand():
                                 elif current_player == "Player 2":
                                     winning_player = "Player 1"
                             
-
-                            #report data to server
                             s.send(bytes(game_results, "UTF-8"))
                             nextStatus = ClientStatus.endGame 
                         else:
@@ -365,8 +369,15 @@ def getServerCommand():
                         #tell server to play a new round
                         s.send(bytes("NEW_ROUND", "UTF-8"))
                         data = (s.recv(1024)).decode("UTF-8")
-                        print(data)
                         if data == "OKAY":
+                            #reset the build/attack/defend sequences to "NONE"
+                            attack_sequence = ""
+                            defend_sequence = ""
+                            build_sequence = "None"
+                            has_attacks = False
+                            has_defends = False
+                            numActionsSelected = 0
+                            
                             data = "TEMP"
                             if current_player == "Spectator":
                                 data = "SPECTATING"
@@ -393,12 +404,7 @@ def getServerCommand():
                             elif data == "SPECTATING":
                                 nextStatus = ClientStatus.spectating
 
-                            #reset the build/attack/defend sequences to "NONE"
-                            attack_sequence = "None"
-                            defend_sequence = "None"
-                            build_sequence = "None"
-                            has_attacks = False
-                            has_defends = False
+                            
     except timeout:
         error_message = "A timeout has occurred"
         nextStatus = ClientStatus.offline
@@ -487,6 +493,7 @@ def connectToRoom(command, room_name, err):
     global s
     global error_message
     try:
+        print(command)
         s.send(bytes(command, "UTF-8"))
         data = (s.recv(1024)).decode("UTF-8")
         print(data)
